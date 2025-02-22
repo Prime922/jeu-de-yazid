@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeu de Yazid</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body, html {
+            height: 100%;
+            overflow: hidden;
+            background: url('caca.gif') repeat-x fixed;
+            background-size: cover;
+            font-family: 'Press Start 2P', cursive; /* Police pixelisée */
+            background-position: 0 0; /* Position initiale du fond */
+            transition: background-position 0s linear; /* Pour la transition lorsque l'animation est stoppée */
+        }
+
+        @font-face {
+            font-family: 'Press Start 2P';
+            src: url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        }
+
+        .line {
+            position: absolute;
+            bottom: 100px; /* La ligne se trouve à 100px du bas */
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background-color: #fff; /* Couleur de la ligne */
+        }
+
+        .obstacle {
+            position: absolute;
+            bottom: 100px; /* Aligné avec la ligne */
+            width: 60px;
+            height: 60px;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .yazid {
+            position: absolute;
+            bottom: 100px; /* Aligné avec la ligne */
+            left: 50px;
+            width: 80px;
+            height: 100px;
+            background: url('yazid-removebg-preview.png') no-repeat center center;
+            background-size: contain;
+            transition: bottom 0.1s;
+        }
+
+        #scoreDisplay {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 24px;
+            border: 2px solid white;
+            padding: 5px 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+        }
+
+        .scoreText {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 18px;
+        }
+
+        #lifeBar {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            width: 200px;
+            height: 20px;
+            background-color: #ccc;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #life {
+            height: 100%;
+            background-color: green;
+            width: 100%;
+            border-radius: 10px;
+        }
+
+        #gameOverScreen, #pauseMenu {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 30px;
+            font-weight: bold;
+            text-align: center;
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        #pauseMenu button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 20px;
+            background-color: #555;
+            border: none;
+            color: white;
+            cursor: pointer;
+        }
+
+        #pauseMenu button:hover {
+            background-color: #888;
+        }
+
+        #pauseMenu button:not(:last-child) {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="line"></div>
+
+    <div id="scoreDisplay">
+        <span class="scoreText">Score actuel: <span id="currentScore">0</span></span>
+        <br>
+        <span class="scoreText">Score max: <span id="maxScore">0</span></span>
+    </div>
+
+    <div id="lifeBar">
+        <div id="life"></div>
+    </div>
+
+    <div id="gameOverScreen">Game Over! Appuyez sur "Espace" pour recommencer.</div>
+
+    <div id="pauseMenu">
+        <p>Jeu en pause</p>
+        <button id="resumeBtn">Reprendre</button>
+        <button id="restartBtn">Recommencer</button>
+        <button id="resetGameBtn">Tout recommencer</button>
+    </div>
+
+    <script>
+        const canvasWidth = window.innerWidth;
+
+        const yazid = document.createElement('div');
+        yazid.className = 'yazid';
+        document.body.appendChild(yazid);
+
+        const obstacles = ['yassir-removebg-preview.png', 'caca-removebg-preview.png', 'chips-removebg-preview.png'];
+        let score = 0;
+        let maxScore = localStorage.getItem('maxScore') ? parseInt(localStorage.getItem('maxScore')) : 0;
+        let isJumping = false;
+        let jumpHeight = 0;
+        let gravity = 6;
+        let jumpSpeed = 15;
+        let gameOver = false;
+        let obstaclesArray = [];
+        let lastObstacleTime = 0;
+        let gameSpeed = 6;
+        let isPaused = false;
+        let lastFrameTime = 0;
+        let onGround = true;
+
+        // Charger les sons pour chaque obstacle
+        const jumpSound = new Audio('T3AM.mp3');  // Son de Yazid
+        const yassirSound = new Audio('Yassir.mp3');  // Son de Yassir
+        const parmiJianoSound = new Audio('PARMIJIANO.mp3');  // Son pour caca.png
+        const yazidSound = new Audio('YAZID.mp3');  // Son pour chips.png
+
+        // Fonction de saut avec son
+        function jump() {
+            if (isJumping) {
+                if (jumpHeight < 260) {
+                    jumpHeight += jumpSpeed;
+                    yazid.style.bottom = 100 + jumpHeight + 'px';
+                } else {
+                    isJumping = false;
+                }
+            } else {
+                if (jumpHeight > 0) {
+                    jumpHeight -= gravity;
+                    yazid.style.bottom = 100 + jumpHeight + 'px';
+                } else {
+                    jumpHeight = 0;
+                    onGround = true;
+                }
+            }
+
+            // Jouer le son de saut lorsque Yazid saute
+            if (isJumping && jumpHeight === jumpSpeed) {
+                jumpSound.play();
+            }
+        }
+
+        function generateObstacle() {
+            const obstacle = document.createElement('div');
+            const randomObstacle = obstacles[Math.floor(Math.random() * obstacles.length)];
+            obstacle.style.backgroundImage = `url(${randomObstacle})`;
+            obstacle.className = 'obstacle';
+            obstacle.style.left = (canvasWidth + 700) + 'px';
+            document.body.appendChild(obstacle);
+            obstaclesArray.push(obstacle);
+        }
+
+        function checkCollision() {
+            obstaclesArray.forEach(obstacle => {
+                const obsRect = obstacle.getBoundingClientRect();
+                const yazidRect = yazid.getBoundingClientRect();
+
+                if (obsRect.left < yazidRect.right && obsRect.right > yazidRect.left &&
+                    obsRect.top < yazidRect.bottom && yazidRect.bottom > obsRect.top) {
+                    // Si Yazid touche un obstacle, il meurt et on joue le son correspondant
+                    gameOverHandler();
+
+                    // Jouer le son en fonction du type d'obstacle
+                    const obstacleType = obstacle.style.backgroundImage;
+
+                    if (obstacleType.includes('yassir-removebg-preview.png')) {
+                        yassirSound.play();
+                    } else if (obstacleType.includes('caca-removebg-preview.png')) {
+                        parmiJianoSound.play();
+                    } else if (obstacleType.includes('chips-removebg-preview.png')) {
+                        yazidSound.play();
+                    }
+                }
+            });
+        }
+
+        function gameOverHandler() {
+            gameOver = true;
+            if (score > maxScore) {
+                maxScore = score;
+                localStorage.setItem('maxScore', maxScore);
+            }
+            document.getElementById('gameOverScreen').style.display = 'block';
+            // Arrête l'animation du fond en fixant la position
+            document.body.style.backgroundPosition = '0 0'; // Arrête l'animation
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('currentScore').textContent = score;
+            document.getElementById('maxScore').textContent = maxScore;
+        }
+
+        function animate(timestamp) {
+            if (gameOver || isPaused) return;
+
+            if (!lastFrameTime) lastFrameTime = timestamp;
+            lastFrameTime = timestamp;
+
+            obstaclesArray.forEach(obstacle => {
+                let obstacleX = parseFloat(obstacle.style.left);
+                obstacleX -= gameSpeed;
+                obstacle.style.left = obstacleX + 'px';
+
+                if (obstacleX < -120) {
+                    obstacle.remove();
+                    obstaclesArray = obstaclesArray.filter(ob => ob !== obstacle);
+                    score++;
+                    updateScoreDisplay();
+                }
+            });
+
+            if (Date.now() - lastObstacleTime > 2000) {
+                generateObstacle();
+                lastObstacleTime = Date.now();
+            }
+
+            jump();
+            checkCollision();
+            requestAnimationFrame(animate);
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === ' ' && !isJumping && onGround && !gameOver && !isPaused) {
+                isJumping = true;
+                onGround = false;
+            }
+
+            if (gameOver && event.key === ' ') {
+                restartGame();
+            }
+
+            if (event.key === 'Escape') {
+                togglePause();
+            }
+        });
+
+        document.getElementById('resumeBtn').addEventListener('click', togglePause);
+        document.getElementById('restartBtn').addEventListener('click', restartGame);
+        document.getElementById('resetGameBtn').addEventListener('click', resetGame);
+
+        function togglePause() {
+            isPaused = !isPaused;
+            document.getElementById('pauseMenu').style.display = isPaused ? 'block' : 'none';
+            // Arrête l'animation du fond si le jeu est en pause
+            document.body.style.backgroundPosition = isPaused ? '0 0' : ''; // Si en pause, arrête l'animation
+            if (!isPaused) requestAnimationFrame(animate);
+        }
+
+        function restartGame() {
+            // Relance l'animation du fond en réinitialisant la position du background
+            document.body.style.backgroundPosition = ''; // Relance l'animation
+            location.reload();
+        }
+
+        function resetGame() {
+            localStorage.removeItem('maxScore');
+            location.reload();
+        }
+
+        generateObstacle();
+        animate();
+    </script>
+</body>
+</html>
